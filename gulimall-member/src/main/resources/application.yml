@@ -1,0 +1,15 @@
+spring:
+  datasource:
+    username: root
+    password: sukun031015
+    url: jdbc:mysql:///gulimall_ums?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+mybatis-plus:
+  mapper-locations: classpath:mapper/**/*.xml
+  global-config:
+    db-config:
+      id-type: auto
+
+server:
+  port: 8000
