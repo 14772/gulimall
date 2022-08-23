@@ -4,5 +4,3 @@
 **/target/
 .idea
 **/.gitignore
-/renren-generator/
-/renren-fast/
