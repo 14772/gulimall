@@ -200,6 +200,11 @@ public class AttrServiceImpl extends ServiceImpl<AttrDao, AttrEntity> implements
         return new PageUtils(getAttrEntityIPage(params, wrapper));
     }
 
+    @Override
+    public List<Long> selectSearchAttrIds(List<Long> attrIds) {
+        return baseMapper.selectSearchAttrIds(attrIds);
+    }
+
     private IPage<AttrEntity> getAttrEntityIPage(Map<String, Object> params, QueryWrapper<AttrEntity> wrapper) {
         String key = (String) params.get("key");
         if (!StringUtils.isEmpty(key)) {

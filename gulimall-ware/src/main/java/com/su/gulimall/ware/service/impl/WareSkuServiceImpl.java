@@ -1,8 +1,8 @@
 package com.su.gulimall.ware.service.impl;
 
-import com.su.common.to.SkuReductionTo;
 import com.su.common.utils.R;
 import com.su.gulimall.ware.feign.ProductFeignService;
+import com.su.common.to.SkuHasStockTo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -72,6 +72,17 @@ public class WareSkuServiceImpl extends ServiceImpl<WareSkuDao, WareSkuEntity> i
         } else {
             wareSkuDao.addStock(skuId, wareId, skuNum);
         }
+    }
+
+    @Override
+    public List<SkuHasStockTo> getSkusHasStock(List<Long> skuIds) {
+        return skuIds.stream().map(skuId -> {
+            SkuHasStockTo skuHasStockTo = new SkuHasStockTo();
+            Long count = baseMapper.getSkuStock(skuId);
+            skuHasStockTo.setSkuId(skuId);
+            skuHasStockTo.setHasStock(count != null && count > 0);
+            return skuHasStockTo;
+        }).toList();
     }
 
 }

@@ -1,10 +1,16 @@
 package com.su.gulimall.product.service.impl;
 
+import com.alibaba.fastjson2.TypeReference;
+import com.su.common.constant.ProductConstant;
+import com.su.common.to.SkuHasStockTo;
 import com.su.common.to.SkuReductionTo;
 import com.su.common.to.SpuBoundTo;
+import com.su.common.to.es.SkuEsModel;
 import com.su.common.utils.R;
 import com.su.gulimall.product.entity.*;
 import com.su.gulimall.product.feign.CouponFeignService;
+import com.su.gulimall.product.feign.SearchFeignService;
+import com.su.gulimall.product.feign.WareFeignService;
 import com.su.gulimall.product.service.*;
 import com.su.gulimall.product.vo.*;
 import lombok.extern.slf4j.Slf4j;
@@ -13,9 +19,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
@@ -56,6 +61,18 @@ public class SpuInfoServiceImpl extends ServiceImpl<SpuInfoDao, SpuInfoEntity> i
 
     @Autowired
     private CouponFeignService couponFeignService;
+
+    @Autowired
+    private BrandService brandService;
+
+    @Autowired
+    private CategoryService categoryService;
+
+    @Autowired
+    private WareFeignService wareFeignService;
+
+    @Autowired
+    private SearchFeignService searchFeignService;
 
     @Override
     public PageUtils queryPage(Map<String, Object> params) {
@@ -178,9 +195,7 @@ public class SpuInfoServiceImpl extends ServiceImpl<SpuInfoDao, SpuInfoEntity> i
         QueryWrapper<SpuInfoEntity> queryWrapper = new QueryWrapper<>();
         String key = (String) params.get("key");
         if (StringUtils.hasLength(key)) {
-            queryWrapper.and((wrapper) -> {
-                wrapper.eq("id", key).or().like("spu_name", key);
-            });
+            queryWrapper.and((wrapper) -> wrapper.eq("id", key).or().like("spu_name", key));
         }
         String status = (String) params.get("status");
         if (StringUtils.hasLength(key)) {
@@ -199,6 +214,55 @@ public class SpuInfoServiceImpl extends ServiceImpl<SpuInfoDao, SpuInfoEntity> i
                 queryWrapper
         );
         return new PageUtils(page);
+    }
+
+    @Override
+    public void up(Long spuId) {
+        List<SkuInfoEntity> skus = skuInfoService.getSkuBySpuId(spuId);
+        List<Long> skuIdList = skus.stream().map(SkuInfoEntity::getSkuId).toList();
+        List<ProductAttrValueEntity> baseAttrs = productAttrValueService.baseAttrListForSpu(spuId);
+        List<Long> attrIds = baseAttrs.stream().map(ProductAttrValueEntity::getAttrId).toList();
+        List<Long> searchAttrIds = attrService.selectSearchAttrIds(attrIds);
+        Set<Long> idSet = new HashSet<>(searchAttrIds);
+        List<SkuEsModel.Attrs> attrsList = baseAttrs.stream().filter(item ->
+                idSet.contains(item.getAttrId())
+        ).map(item -> {
+            SkuEsModel.Attrs attrs = new SkuEsModel.Attrs();
+            BeanUtils.copyProperties(item, attrs);
+            return attrs;
+        }).toList();
+        Map<Long, Boolean> stockMap = null;
+        try {
+            R r = wareFeignService.getSkusHasStock(skuIdList);
+            stockMap = r.getData(new TypeReference<List<SkuHasStockTo>>() {}).stream().collect(
+                    Collectors.toMap(SkuHasStockTo::getSkuId, SkuHasStockTo::getHasStock)
+            );
+        } catch (Exception e) {
+            log.error("库存服务查询异常：原因", e);
+        }
+        Map<Long, Boolean> finalStockMap = stockMap;
+        List<SkuEsModel> uoProducts = skus.stream().map(sku -> {
+            SkuEsModel esModel = new SkuEsModel();
+            BeanUtils.copyProperties(sku, esModel);
+            esModel.setSkuPrice(sku.getPrice());
+            esModel.setSkuImg(sku.getSkuDefaultImg());
+            esModel.setHasStock(finalStockMap != null ? finalStockMap.get(sku.getSkuId()) : true);
+            // TODO 热度评分
+            esModel.setHotScore(0L);
+            BrandEntity brand = brandService.getById(esModel.getBrandId());
+            esModel.setBrandName(brand.getName());
+            esModel.setBrandImg(brand.getLogo());
+            CategoryEntity category = categoryService.getById(esModel.getCatelogId());
+            esModel.setCatelogName(category.getName());
+            esModel.setAttrs(attrsList);
+            return esModel;
+        }).toList();
+        R r = searchFeignService.productStatusUp(uoProducts);
+        if (r.getCode() == 0) {
+            baseMapper.updateSpuStatus(spuId, ProductConstant.StatusEnum.SPU_UP.getCode());
+        } else {
+            // TODO 重复调用？接口幂等性：重试机制
+        }
     }
 
 }
